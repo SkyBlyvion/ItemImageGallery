@@ -44,57 +44,58 @@ page 50102 "NL Item Picture Gallery"
             action(Next) // Action pour afficher l'image suivante
             {
                 ApplicationArea = All;
-                Caption = 'Next';
-                Image = NextRecord;
+                Caption = 'Suivant';
+                Image = NextRecord; // Icone pour afficher l'image suivante
 
                 trigger OnAction()
                 begin
-                    Rec.Next(1);
+                    Rec.Next(1); // Passe à l'enregistrement (image) suivant
                 end;
             }
             action(Previous) // Action pour afficher l'image précédente
             {
                 ApplicationArea = All;
-                Caption = 'Previous';
+                Caption = 'Précédent';
                 Image = PreviousRecord;
 
                 trigger OnAction()
                 begin
-                    Rec.Next(-1);
+                    Rec.Next(-1); // Passe à l'enregistrement (image) précédent
                 end;
             }
-            action(DeletePicture)
+            action(DeletePicture) // Action pour supprimer l'image actuelle
             {
                 ApplicationArea = All;
-                Caption = 'Delete';
+                Caption = 'Supprimer';
                 Image = Delete;
-                ToolTip = 'Delete the record.';
+                ToolTip = 'Supprimer l''image actuelle.';
 
                 trigger OnAction()
                 begin
-                    DeleteItemPicture;
+                    DeleteItemPicture; // Appelle la procédure de suppression de l'image
                 end;
             }
         }
     }
 
-    trigger OnAfterGetCurrRecord()
+    trigger OnAfterGetCurrRecord() // Déclencheur après récupération de l'enregistrement actuel
     var
         ItemPictureGallery: Record ItemPictureGallery;
     begin
-        ImageCount := '';
-        ItemPictureGallery.Reset();
-        ItemPictureGallery.SetRange("Item No.", Rec."Item No.");
+        ImageCount := ''; // Initialiser le compteur d'images
+        ItemPictureGallery.Reset(); // Réinitialiser les filtres du record
+        ItemPictureGallery.SetRange("Item No.", Rec."Item No."); // Appliquer un filtre sur le numéro d'article
+        // Si des images sonts présentes, affiche la position de l'image actuelle, sinon 0/0
         if ItemPictureGallery.Count > 0 then
             ImageCount := Format(Rec.Sequencing) + ' / ' + Format(ItemPictureGallery.Count)
         else
             ImageCount := '0 / 0';
     end;
 
-
+    // Variables globales pour les messages, compteur d'images et suppression
     var
-        DeleteImageQst: Label 'Are you sure you want to delete the picture?';
-        NothingDel: Label 'Nothing to delete';
+        DeleteImageQst: Label 'Êtes-vous sur de vouloir supprimer cette image ?';
+        NothingDel: Label 'Rien à supprimer';
         ImageCount: Text[100];
 
 
