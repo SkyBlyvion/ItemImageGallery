@@ -1,0 +1,32 @@
+{
+  "id": "76eacc5c-c457-44fe-ad39-c040e45fcd3e",
+  "name": "ItemImageGallery",
+  "publisher": "Lopez Nicolas",
+  "version": "1.0.0.2",
+  "brief": "",
+  "description": "REVIMPORT - Item Image Gallery",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "",
+  "logo": "",
+  "dependencies": [],
+  "screenshots": [],
+  "platform": "1.0.0.0",
+  "application": "24.0.0.0",
+  "idRanges": [
+    {
+      "from": 50100,
+      "to": 50120
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true
+  },
+  "runtime": "13.0",
+  "features": [
+    "NoImplicitWith"
+  ]
+}
