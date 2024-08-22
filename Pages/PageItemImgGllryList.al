@@ -5,7 +5,7 @@ page 50102 "NL Item Picture Gallery"
     DeleteAllowed = false; // Empêche la suppression d'images via cette page
     Caption = 'Gallerie d''images d''articles';
     SourceTable = ItemPictureGallery; // Source de données
-    PageType = CardPart; // factbox
+    PageType = CardPart; // factbox used to display detailed information related to a record within another page
 
     layout
     {
@@ -25,6 +25,7 @@ page 50102 "NL Item Picture Gallery"
         }
     }
 
+    // TODO: Faire des local procedures pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
     actions
     {
         area(processing)
@@ -50,19 +51,19 @@ page 50102 "NL Item Picture Gallery"
 
                 trigger OnAction()
                 var
-                    ZipInStream: InStream;
-                    FileName: Text;
-                    DataCompression: Codeunit "Data Compression";
+                    ZipInStream: InStream; // instream contenant le fichier ZIP
+                    FileName: Text; // stocker le nom du fichier
+                    DataCompression: Codeunit "Data Compression"; // Codeunit contenant la procédure de compression extraction
                     UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
-                    ItemPictureGallery: Record ItemPictureGallery;
-                    Item: Record Item;
-                    ImageStream: InStream;
-                    ImageOutStream: OutStream;
-                    EntryList: List of [Text];
-                    EntryName: Text;
-                    ItemNo: Code[20];
-                    PictureNo: Integer;
-                    TempBlob: Codeunit "Temp Blob";
+                    ItemPictureGallery: Record ItemPictureGallery; // record contenant les images ( elles finissent dans la tenant media )
+                    Item: Record Item; // validate the existence of an item based on the file name.
+                    ImageStream: InStream; // lire l'image
+                    ImageOutStream: OutStream; // stockage temporaire de l'image
+                    EntryList: List of [Text]; // liste des noms des images
+                    EntryName: Text; // text variable qui reprsente le nom d'une image dans l'archive
+                    ItemNo: Code[20]; // item number
+                    PictureNo: Integer; // picture number
+                    TempBlob: Codeunit "Temp Blob"; // Codeunit contenant la procédure de stockage temporaire
                 begin
                     if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
                         DataCompression.OpenZipArchive(ZipInStream, false);
@@ -135,13 +136,66 @@ page 50102 "NL Item Picture Gallery"
                     end;
                 end;
             }
+            action(ExportItemPictures)
+            {
+                ApplicationArea = All;
+                Image = ExportAttachment;
+                Caption = 'Exporter les images de cet article dans un fichier Zip';
+                ToolTip = 'Exporter toutes les images de cet article dans un fichier Zip';
+
+                trigger OnAction()
+                var
+                    ItemPictureGallery: Record ItemPictureGallery;
+                    TenantMedia: Record "Tenant Media";
+                    datacompresion: Codeunit 425;
+                    blobStorage: Codeunit "Temp Blob";
+                    PicInStream, ZipInStream : InStream;
+                    ZipOutStream: OutStream;
+                    ZipFileName: Text;
+                    ItemCnt, Index, PicCount : Integer;
+                begin
+                    ZipFileName := StrSubstNo('%1_Pictures.zip', Rec."Item No.");
+                    datacompresion.CreateZipArchive();
+
+                    // Filter for the specific item
+                    ItemPictureGallery.Reset();
+                    ItemPictureGallery.SetRange("Item No.", Rec."Item No."); // Filter to only include images for the current item
+
+                    if ItemPictureGallery.FindSet() then begin
+                        repeat
+                            if ItemPictureGallery.Picture.Count > 0 then begin
+                                ItemCnt := ItemCnt + 1;
+                                for Index := 1 to ItemPictureGallery.Picture.Count do begin
+                                    PicCount := PicCount + 1;
+                                    if TenantMedia.Get(ItemPictureGallery.Picture.Item(Index)) then begin
+                                        TenantMedia.CalcFields(Content);
+                                        if TenantMedia.Content.HasValue then begin
+                                            TenantMedia.Content.CreateInStream(PicInStream);
+                                            datacompresion.AddEntry(PicInStream, StrSubstNo('%1_%2.jpg', ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No."));
+                                        end;
+                                    end;
+                                end;
+                            end;
+                        until ItemPictureGallery.Next() = 0;
+                    end;
+
+                    Message('Images traitées : %1', Format(PicCount));
+                    blobStorage.CreateOutStream(ZipOutStream);
+                    datacompresion.SaveZipArchive(ZipOutStream);
+                    datacompresion.CloseZipArchive();
+                    blobStorage.CreateInStream(ZipInStream);
+                    DownloadFromStream(ZipInStream, 'Télécharger le fichier zip', '', '', ZipFileName);
+                end;
+            }
+
             //TODO: Enhance the Naming of the Zip(add Item Picture No), add error handling, also add support for differents formats
+            // Cet export exporte toutes les images de la table Gallerie Images.
             action(ExportMultiplePictures)
             {
                 ApplicationArea = All;
                 Image = ExportAttachment;
-                Caption = 'Exporter toutes les images dans un fichier Zip';
-                ToolTip = 'Exporter toutes les images dans un fichier Zip';
+                Caption = 'Exporter toutes les images de la table';
+                ToolTip = 'Exporter toutes les images de la table Gallerie dans un fichier ZIP';
                 trigger OnAction()
                 var
                     ItemPictureGallery: Record ItemPictureGallery;
