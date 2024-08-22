@@ -11,16 +11,52 @@ page 50102 "NL Item Picture Gallery"
     {
         area(content)
         {
-            field(ImageCount; ImageCount) // affiche le nombre total d'images et la position de l'image actuellement affichée.
+            grid(ImageGalleryGrid)
             {
-                ApplicationArea = All;
-                ShowCaption = false; // Cache la légende (caption) du champ
-                Editable = false;
+                ShowCaption = false;
+
+                // Navigation arrows placed above the image
+                group(NavigationGroup)
+                {
+                    ShowCaption = false;
+
+                    field(PrevArrow; '<  ') // Previous arrow field
+                    {
+                        ApplicationArea = All;
+                        ShowCaption = false;
+                        Editable = false;
+                        trigger OnDrillDown()
+                        begin
+                            ShowPreviousImage(); // Call procedure to show the previous image
+                        end;
+                    }
+                    field(NextArrow; '>  ')
+                    {
+                        ApplicationArea = All;
+                        ShowCaption = false;
+                        Editable = false;
+                        trigger OnDrillDown()
+                        begin
+                            ShowNextImage(); // Call procedure to show the next image
+                        end;
+                    }
+                }
+
             }
-            field(Picture; Rec.Picture) // affiche l'image associée à l'article.
+            // Main image display
+            field(Picture; Rec.Picture)
             {
                 ApplicationArea = All;
                 ShowCaption = false;
+                Editable = false;
+            }
+
+            // Displays the image count below the image
+            field(ImageCount; ImageCount)
+            {
+                ApplicationArea = All;
+                ShowCaption = false;
+                Editable = false;
             }
         }
     }
@@ -30,10 +66,11 @@ page 50102 "NL Item Picture Gallery"
     {
         area(processing)
         {
+            // Pour cet import pas besoin de renommer l'image, elle sera automatiquement nommée ( Item No. + Item Picture No. )
             action(ImportPicture)
             {
                 ApplicationArea = All;
-                Caption = 'Importer';
+                Caption = 'Importer une image';
                 Image = Import;
                 ToolTip = 'Importer une image.'; // info-bulle au Survol ( Hover )
 
@@ -45,9 +82,9 @@ page 50102 "NL Item Picture Gallery"
             action(ImportMultiplePictures)
             {
                 ApplicationArea = All;
-                Caption = 'Importer plusieurs images';
+                Caption = 'Importer plusieurs images pour ect article';
                 Image = Import;
-                ToolTip = 'Importer plusieurs images depuis un fichier ZIP.';
+                ToolTip = 'Importer plusieurs images depuis un fichier ZIP vers l''article de la page.';
 
                 trigger OnAction()
                 var
@@ -234,28 +271,6 @@ page 50102 "NL Item Picture Gallery"
                     DownloadFromStream(ZipInStream, 'Download zip file', '', '', ZipFileName);
                 end;
             }
-            action(Next) // Action pour afficher l'image suivante
-            {
-                ApplicationArea = All;
-                Caption = 'Suivant';
-                Image = NextRecord; // Icone pour afficher l'image suivante
-
-                trigger OnAction()
-                begin
-                    Rec.Next(1); // Passe à l'enregistrement (image) suivant
-                end;
-            }
-            action(Previous) // Action pour afficher l'image précédente
-            {
-                ApplicationArea = All;
-                Caption = 'Précédent';
-                Image = PreviousRecord;
-
-                trigger OnAction()
-                begin
-                    Rec.Next(-1); // Passe à l'enregistrement (image) précédent
-                end;
-            }
             action(DeletePicture) // Action pour supprimer l'image actuelle
             {
                 ApplicationArea = All;
@@ -360,4 +375,27 @@ page 50102 "NL Item Picture Gallery"
                 ItemPictureGallery.Modify();
             until ItemPictureGallery.Next() = 0;
     end;
+
+    // Local procedures for navigating images
+    local procedure ShowNextImage()
+    var
+        RecordsSkipped: Integer;
+    begin
+        RecordsSkipped := Rec.Next(1); // Move to the next record
+        if RecordsSkipped > 0 then begin // Check if a record was found
+            CurrPage.Update(false); // Refresh page to show the next image
+        end;
+    end;
+
+    local procedure ShowPreviousImage()
+    var
+        RecordsSkipped: Integer;
+    begin
+        RecordsSkipped := Rec.Next(-1); // Move to the previous record
+        if RecordsSkipped > 0 then begin // Check if a record was found
+            CurrPage.Update(false); // Refresh page to show the previous image
+        end;
+    end;
+
+
 }
