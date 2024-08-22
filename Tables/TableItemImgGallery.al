@@ -16,7 +16,7 @@ table 50100 ItemPictureGallery
             Caption = 'No. d''image d''article';
             DataClassification = CustomerContent;
         }
-        field(3; Picture; MediaSet) // Ce champ utilise le type MediaSet, permettant de stocker plusieurs images pour un seul article. 
+        field(3; Picture; MediaSet) // Ce champ utilise le type MediaSet, permettant de (stocker) plusieurs images pour un seul article. Les images finissent stocké dans le TENANT MEDIA ( natif de l'application )
         {
             Caption = 'Image';
             DataClassification = CustomerContent;
