@@ -1,3 +1,7 @@
+/* Cette section du code est trop longue, il faudrait utiliser des CodeUnits, EventSubscriber, et ou move les parties qui manipule table data vers tablextension ou tabletriggers */
+/* Aprés rechrche, 300 a 400 lignes n'est pas mauvais, mais on peut tout a fait refactoriser les parties en suivant la (Single Resposability Principle) */
+
+/* */
 page 50102 "NL Item Picture Gallery"
 {
     InsertAllowed = false; // Empêche l'insertion de nouvelles images directement via cette page
@@ -61,13 +65,14 @@ page 50102 "NL Item Picture Gallery"
         }
     }
 
+
     // TODO: Faire des local procedures pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
     actions
     {
         area(processing)
         {
             // Pour cet import pas besoin de renommer l'image, elle sera automatiquement nommée ( Item No. + Item Picture No. )
-            action(ImportPicture)
+            action(ImportOnePicture)
             {
                 ApplicationArea = All;
                 Caption = 'Importer une image';
@@ -82,7 +87,7 @@ page 50102 "NL Item Picture Gallery"
             action(ImportMultiplePictures)
             {
                 ApplicationArea = All;
-                Caption = 'Importer plusieurs images pour ect article';
+                Caption = 'Importer plusieurs images pour cet article';
                 Image = Import;
                 ToolTip = 'Importer plusieurs images depuis un fichier ZIP vers l''article de la page.';
 
@@ -142,11 +147,24 @@ page 50102 "NL Item Picture Gallery"
                     end;
                 end;
             }
+            // New action to open Custom Import Item Pictures page
+            action(OpenCustomImportPicturesPage)
+            {
+                ApplicationArea = All;
+                Caption = 'Importer des images pour tous les articles';
+                Image = Import;
+                ToolTip = 'Ouvrir la page de personnalisation pour importer des images à partir d''un fichier ZIP vers tous les articles.';
+
+                trigger OnAction()
+                begin
+                    PAGE.RUNMODAL(PAGE::"Custom Import Item Pictures");
+                end;
+            }
             action(ExportSinglePicture)
             {
                 ApplicationArea = All;
                 Caption = 'Exporter l''image actuelle';
-                Image = Export;
+                Image = ExportAttachment;
                 ToolTip = 'Exporter l''image actuellement affichée.';
 
                 trigger OnAction()

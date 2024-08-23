@@ -1,4 +1,4 @@
-table 50100 ItemPictureGallery
+table 50105 ItemPictureGallery
 {
     Caption = 'Gallerie d''images'; // Nom affiché dans l'interface user
     DataClassification = CustomerContent; // Classification de données
