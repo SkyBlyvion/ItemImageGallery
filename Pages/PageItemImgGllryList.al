@@ -1,7 +1,6 @@
 /* Cette section du code est trop longue, il faudrait utiliser des CodeUnits, EventSubscriber, et ou move les parties qui manipule table data vers tablextension ou tabletriggers */
 /* Aprés rechrche, 300 a 400 lignes n'est pas mauvais, mais on peut tout a fait refactoriser les parties en suivant la (Single Resposability Principle) */
-
-/* */
+/* implémenter asynchrone processing ou buffer table pour les largeImports */
 page 50102 "NL Item Picture Gallery"
 {
     InsertAllowed = false; // Empêche l'insertion de nouvelles images directement via cette page
@@ -54,7 +53,6 @@ page 50102 "NL Item Picture Gallery"
                 ShowCaption = false;
                 Editable = false;
             }
-
             // Displays the image count below the image
             field(ImageCount; ImageCount)
             {
@@ -64,8 +62,6 @@ page 50102 "NL Item Picture Gallery"
             }
         }
     }
-
-
     // TODO: Faire des local procedures pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
     actions
     {
@@ -92,72 +88,20 @@ page 50102 "NL Item Picture Gallery"
                 ToolTip = 'Importer plusieurs images depuis un fichier ZIP vers l''article de la page.';
 
                 trigger OnAction()
-                var
-                    ZipInStream: InStream; // instream contenant le fichier ZIP
-                    FileName: Text; // stocker le nom du fichier
-                    DataCompression: Codeunit "Data Compression"; // Codeunit contenant la procédure de compression extraction
-                    UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
-                    ItemPictureGallery: Record ItemPictureGallery; // record contenant les images ( elles finissent dans la tenant media )
-                    Item: Record Item; // validate the existence of an item based on the file name.
-                    ImageStream: InStream; // lire l'image
-                    ImageOutStream: OutStream; // stockage temporaire de l'image
-                    EntryList: List of [Text]; // liste des noms des images
-                    EntryName: Text; // text variable qui reprsente le nom d'une image dans l'archive
-                    ItemNo: Code[20]; // item number
-                    PictureNo: Integer; // picture number
-                    TempBlob: Codeunit "Temp Blob"; // Codeunit contenant la procédure de stockage temporaire
                 begin
-                    if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
-                        DataCompression.OpenZipArchive(ZipInStream, false);
-                        DataCompression.GetEntryList(EntryList);
-
-                        foreach EntryName in EntryList do begin
-                            if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
-                                // Assume file name format is 'ItemNo_PictureNo.ext'
-                                ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '_') - 1);
-                                Evaluate(PictureNo, CopyStr(EntryName, StrPos(EntryName, '_') + 1, StrPos(EntryName, '.') - StrPos(EntryName, '_') - 1));
-
-                                if Item.Get(ItemNo) then begin
-                                    TempBlob.CreateOutStream(ImageOutStream);
-                                    DataCompression.ExtractEntry(EntryName, ImageOutStream);
-                                    TempBlob.CreateInStream(ImageStream);
-
-                                    ItemPictureGallery.Reset();
-                                    ItemPictureGallery.SetRange("Item No.", ItemNo);
-                                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
-
-                                    if not ItemPictureGallery.FindFirst() then begin
-                                        ItemPictureGallery.Init();
-                                        ItemPictureGallery."Item No." := ItemNo;
-                                        ItemPictureGallery."Item Picture No." := PictureNo;
-                                        ItemPictureGallery.Sequencing := PictureNo;
-                                        ItemPictureGallery.Insert();
-                                    end;
-
-                                    ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
-                                    ItemPictureGallery.Modify();
-                                end;
-                            end;
-                        end;
-
-                        DataCompression.CloseZipArchive();
-                        Message('Importation des images terminée.');
-                    end else begin
-                        Message('Aucun fichier sélectionné.');
-                    end;
+                    ImportMultiplePicturesFromZIP();
                 end;
             }
-            // New action to open Custom Import Item Pictures page
-            action(OpenCustomImportPicturesPage)
+            action(ImportMultiplePicturesForAllItems)
             {
                 ApplicationArea = All;
-                Caption = 'Importer des images pour tous les articles';
+                Caption = 'Importer plusieurs images pour tous les articles';
                 Image = Import;
-                ToolTip = 'Ouvrir la page de personnalisation pour importer des images à partir d''un fichier ZIP vers tous les articles.';
+                ToolTip = 'Importer plusieurs images depuis un fichier ZIP pour tous les articles.';
 
                 trigger OnAction()
                 begin
-                    PAGE.RUNMODAL(PAGE::"Custom Import Item Pictures");
+                    ImportMultiplePicturesForAllItemsFromZIP();
                 end;
             }
             action(ExportSinglePicture)
@@ -242,7 +186,6 @@ page 50102 "NL Item Picture Gallery"
                     DownloadFromStream(ZipInStream, 'Télécharger le fichier zip', '', '', ZipFileName);
                 end;
             }
-
             //TODO: Enhance the Naming of the Zip(add Item Picture No), add error handling, also add support for differents formats
             // Cet export exporte toutes les images de la table Gallerie Images.
             action(ExportMultiplePictures)
@@ -324,7 +267,6 @@ page 50102 "NL Item Picture Gallery"
         NothingDel: Label 'Rien à supprimer';
         ImageCount: Text[100];
 
-
     procedure DeleteItemPicture()
     begin
         if not Confirm(DeleteImageQst) then
@@ -363,6 +305,153 @@ page 50102 "NL Item Picture Gallery"
                 if Rec.Get(ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No.") then
                     exit;
             end;
+        end;
+    end;
+
+    local procedure ImportMultiplePicturesFromZIP()
+    var
+        ZipInStream: InStream;
+        FileName: Text;
+        DataCompression: Codeunit "Data Compression";
+        UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
+        ItemPictureGallery: Record ItemPictureGallery;
+        Item: Record Item;
+        ImageStream: InStream;
+        ImageOutStream: OutStream;
+        EntryList: List of [Text];
+        EntryName: Text;
+        ItemNo: Code[20];
+        PictureNo: Integer;
+        TempBlob: Codeunit "Temp Blob";
+        SuffixPos: Integer;
+    begin
+        if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
+            DataCompression.OpenZipArchive(ZipInStream, false);
+            DataCompression.GetEntryList(EntryList);
+
+            foreach EntryName in EntryList do begin
+                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+                    // Determine ItemNo and PictureNo
+                    SuffixPos := StrPos(EntryName, '_');
+                    if SuffixPos > 0 then begin
+                        ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
+                        Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
+                    end else begin
+                        ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
+                        PictureNo := GetNextPictureNo(ItemNo);
+                    end;
+
+                    if Item.Get(ItemNo) then begin
+                        TempBlob.CreateOutStream(ImageOutStream);
+                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
+                        TempBlob.CreateInStream(ImageStream);
+
+                        ItemPictureGallery.Init();
+                        ItemPictureGallery."Item No." := ItemNo;
+                        ItemPictureGallery."Item Picture No." := PictureNo;
+                        ItemPictureGallery.Sequencing := PictureNo;
+
+                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+                        ItemPictureGallery.Insert();
+                    end;
+                end;
+            end;
+
+            DataCompression.CloseZipArchive();
+            Message('Importation des images terminée.');
+        end else begin
+            Message('Aucun fichier sélectionné.');
+        end;
+    end;
+
+    local procedure GetNextPictureNo(ItemNo: Code[20]): Integer
+    var
+        ItemPictureGallery: Record "ItemPictureGallery";
+    begin
+        ItemPictureGallery.SetRange("Item No.", ItemNo);
+        if ItemPictureGallery.FindLast() then
+            exit(ItemPictureGallery."Item Picture No." + 1);
+        exit(1);
+    end;
+
+    local procedure ImportMultiplePicturesForAllItemsFromZIP()
+    var
+        ZipInStream: InStream;
+        FileName: Text;
+        DataCompression: Codeunit "Data Compression";
+        UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
+        ItemPictureGallery: Record ItemPictureGallery;
+        Item: Record Item;
+        ImageStream: InStream;
+        ImageOutStream: OutStream;
+        EntryList: List of [Text];
+        EntryName: Text;
+        ItemNo: Code[20];
+        PictureNo: Integer;
+        TempBlob: Codeunit "Temp Blob";
+        Window: Dialog;
+        ImportedCount: Integer;
+        TotalCount: Integer;
+        SuffixPos: Integer;
+    begin
+        if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
+            DataCompression.OpenZipArchive(ZipInStream, false);
+            DataCompression.GetEntryList(EntryList);
+
+            Window.Open('Traitement: #1##### sur #2#####\Fichier: #3##################');
+            TotalCount := EntryList.Count();
+            ImportedCount := 0;
+
+            foreach EntryName in EntryList do begin
+                ImportedCount += 1;
+                Window.Update(1, ImportedCount);
+                Window.Update(2, TotalCount);
+                Window.Update(3, EntryName);
+
+                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+                    // Determine ItemNo and PictureNo
+                    SuffixPos := StrPos(EntryName, '_');
+                    if SuffixPos > 0 then begin
+                        ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
+                        Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
+                    end else begin
+                        ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
+                        PictureNo := 1;
+                    end;
+
+                    // Handle cases with or without PictureNo
+                    if Item.Get(ItemNo) then begin
+                        TempBlob.CreateOutStream(ImageOutStream);
+                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
+                        TempBlob.CreateInStream(ImageStream);
+
+                        ItemPictureGallery.Reset();
+                        ItemPictureGallery.SetRange("Item No.", ItemNo);
+                        ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+                        if not ItemPictureGallery.FindFirst() then begin
+                            ItemPictureGallery.Init();
+                            ItemPictureGallery."Item No." := ItemNo;
+                            ItemPictureGallery."Item Picture No." := PictureNo;
+                            ItemPictureGallery.Sequencing := PictureNo;
+                            ItemPictureGallery.Insert();
+                        end;
+
+                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+                        if ItemPictureGallery.Modify() then
+                            Message('Image importée pour l''article No: %1, Image No: %2', ItemNo, PictureNo)
+                        else
+                            Message('Échec de l''importation pour l''article No: %1, Image No: %2', ItemNo, PictureNo);
+                    end else
+                        Message('Article No. %1 non trouvé. Import d''image ignoré.', ItemNo);
+                end;
+            end;
+
+            DataCompression.CloseZipArchive();
+            Window.Close();
+            Message('Importation des images terminée. %1 fichiers traités.', ImportedCount);
+        end else begin
+            Message('Aucun fichier sélectionné.');
         end;
     end;
 
@@ -414,6 +503,4 @@ page 50102 "NL Item Picture Gallery"
             CurrPage.Update(false); // Refresh page to show the previous image
         end;
     end;
-
-
 }

@@ -5,7 +5,5 @@ permissionset 50104 "ItemGllryPermissions"
 
     Permissions =
         tabledata "ItemPictureGallery" = RIMD,
-        tabledata "Item Picture Import Buffer" = RIMD,
-        page "NL Item Picture Gallery" = X,
-        page "Custom Import Item Pictures" = X;
+        page "NL Item Picture Gallery" = X;
 }
