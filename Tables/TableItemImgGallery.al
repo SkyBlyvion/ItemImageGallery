@@ -35,4 +35,12 @@ table 50105 ItemPictureGallery
             Clustered = true; // Indique que cette clé primaire est clusterisée pour améliorer les performances de recherche.
         }
     }
+
+    fieldgroups
+    {
+        fieldgroup(Brick; "Item No.", "Item Picture No.", Picture)
+        {
+
+        }
+    }
 }

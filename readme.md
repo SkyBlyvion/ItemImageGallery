@@ -1,819 +1,191 @@
-## Old Parts / reusable Parts
-    // layout
-    // {
-    //     area(content)
-    //     {
-    //         field(ImageCount; ImageCount) // affiche le nombre total d'images et la position de l'image actuellement affichée. TOP RIGHT
-    //         {
-    //             ApplicationArea = All;
-    //             ShowCaption = false; // Cache la légende (caption) du champ
-    //             Editable = false;
-    //         }
-    //         field(Picture; Rec.Picture) // affiche l'image associée à l'article.
-    //         {
-    //             ApplicationArea = All;
-    //             ShowCaption = false;
-    //         }
-    //     }
-    // }
-
-
-    // layout
-    // {
-    //     area(content)
-    //     {
-    //         grid(ImageGalleryGrid)
-    //         {
-    //             ShowCaption = false;
-
-    //             field(PrevArrow; Format('<-')) // Previous arrow field
-    //             {
-    //                 ApplicationArea = All;
-    //                 ShowCaption = false;
-    //                 Editable = false;
-    //                 trigger OnDrillDown()
-    //                 begin
-    //                     ShowPreviousImage(); // Call procedure to show the previous image
-    //                 end;
-    //             }
-    //             field(Picture; Rec.Picture) // Main image display
-    //             {
-    //                 ApplicationArea = All;
-    //                 ShowCaption = false;
-    //                 Editable = false;
-    //             }
-    //             field(NextArrow; Format('->')) // Next arrow field
-    //             {
-    //                 ApplicationArea = All;
-    //                 ShowCaption = false;
-    //                 Editable = false;
-    //                 trigger OnDrillDown()
-    //                 begin
-    //                     ShowNextImage(); // Call procedure to show the next image
-    //                 end;
-    //             }
-    //         }
-    //         field(ImageCount; ImageCount) // Displays the image count
-    //         {
-    //             ApplicationArea = All;
-    //             ShowCaption = false;
-    //             Editable = false;
-    //         }
-    //     }
-    // }
-
-
-    // action(Next) // Action pour afficher l'image suivante
-    // {
-    //     ApplicationArea = All;
-    //     Caption = 'Suivant';
-    //     Image = NextRecord; // Icone pour afficher l'image suivante
-
-    //     trigger OnAction()
-    //     begin
-    //         Rec.Next(1); // Passe à l'enregistrement (image) suivant
-    //     end;
-    // }
-    // action(Previous) // Action pour afficher l'image précédente
-    // {
-    //     ApplicationArea = All;
-    //     Caption = 'Précédent';
-    //     Image = PreviousRecord;
-
-    //     trigger OnAction()
-    //     begin
-    //         Rec.Next(-1); // Passe à l'enregistrement (image) précédent
-    //     end;
-    // }
-
-
-
-namespace Microsoft.Inventory.Item.Picture;
-
-using Microsoft.Inventory.Item;
-using System.IO;
-using System.Utilities;
-
-table 31 "Item Picture Buffer"
+pageextension 50108 "ItemListImageOverride" extends "Item List"
 {
-    Caption = 'Item Picture Buffer';
-    ReplicateData = false;
-    DataClassification = CustomerContent;
-
-    fields
-    {
-        field(1; "File Name"; Text[260])
-        {
-            Caption = 'File Name';
-        }
-        field(2; Picture; Media)
-        {
-            Caption = 'Picture';
-        }
-        field(3; "Item No."; Code[20])
-        {
-            Caption = 'Item No.';
-            TableRelation = Item;
-        }
-        field(4; "Item Description"; Text[100])
-        {
-            CalcFormula = lookup(Item.Description where("No." = field("Item No.")));
-            Caption = 'Item Description';
-            FieldClass = FlowField;
-        }
-        field(5; "Import Status"; Option)
-        {
-            Caption = 'Import Status';
-            Editable = false;
-            OptionCaption = 'Skip,Pending,Completed';
-            OptionMembers = Skip,Pending,Completed;
-        }
-        field(6; "Picture Already Exists"; Boolean)
-        {
-            Caption = 'Picture Already Exists';
-        }
-        field(7; "File Size (KB)"; BigInteger)
-        {
-            Caption = 'File Size (KB)';
-        }
-        field(8; "File Extension"; Text[30])
-        {
-            Caption = 'File Extension';
-        }
-        field(9; "Modified Date"; Date)
-        {
-            Caption = 'Modified Date';
-        }
-        field(10; "Modified Time"; Time)
-        {
-            Caption = 'Modified Time';
-        }
-    }
-
-    keys
-    {
-        key(Key1; "File Name")
-        {
-            Clustered = true;
-        }
-    }
-
-    fieldgroups
-    {
-        fieldgroup(Brick; "File Name", "Item No.", "Item Description", Picture)
-        {
-        }
-    }
-
-    var
-        SelectZIPFileMsg: Label 'Select ZIP File';
-
-    [Scope('OnPrem')]
-    procedure LoadZIPFile(ZipFileName: Text; var TotalCount: Integer; ReplaceMode: Boolean): Text
-    var
-        Item: Record Item;
-        FileMgt: Codeunit "File Management";
-        DataCompression: Codeunit "Data Compression";
-        TempBlob: Codeunit "Temp Blob";
-        Window: Dialog;
-        EntryList: List of [Text];
-        EntryListKey: Text;
-        ServerFile: File;
-        InStream: InStream;
-        EntryOutStream: OutStream;
-        EntryInStream: InStream;
-        ServerFileOpened: Boolean;
-        Length: Integer;
-    begin
-        if ZipFileName <> '' then begin
-            ServerFileOpened := ServerFile.Open(ZipFileName);
-            ServerFile.CreateInStream(InStream)
-        end else
-            if not UploadIntoStream(SelectZIPFileMsg, '', 'Zip Files|*.zip', ZipFileName, InStream) then
-                Error('');
-
-        DataCompression.OpenZipArchive(InStream, false);
-        DataCompression.GetEntryList(EntryList);
-
-        Window.Open('#1##############################');
-
-        TotalCount := 0;
-        DeleteAll();
-        foreach EntryListKey in EntryList do begin
-            Init();
-            "File Name" := CopyStr(FileMgt.GetFileNameWithoutExtension(EntryListKey), 1, MaxStrLen("File Name"));
-            "File Extension" := CopyStr(FileMgt.GetExtension(EntryListKey), 1, MaxStrLen("File Extension"));
-            if StrLen("File Name") <= MaxStrLen(Item."No.") then
-                if Item.Get("File Name") then begin
-                    TempBlob.CreateOutStream(EntryOutStream);
-                    Length := DataCompression.ExtractEntry(EntryListKey, EntryOutStream);
-                    TempBlob.CreateInStream(EntryInStream);
-                    if not IsNullGuid(Picture.ImportStream(EntryInStream, FileMgt.GetFileName(EntryListKey))) then begin
-                        Window.Update(1, "File Name");
-                        "File Size (KB)" := Length;
-                        TotalCount += 1;
-                        "Item No." := Item."No.";
-                        if Item.Picture.Count > 0 then begin
-                            "Picture Already Exists" := true;
-                            if ReplaceMode then
-                                "Import Status" := "Import Status"::Pending;
-                        end else
-                            "Import Status" := "Import Status"::Pending;
-                    end;
-                    Insert();
-                end;
-        end;
-
-        DataCompression.CloseZipArchive();
-        Window.Close();
-
-        if ServerFileOpened then
-            ServerFile.Close();
-
-        exit(ZipFileName);
-    end;
-
-    [Scope('OnPrem')]
-    procedure ImportPictures(ReplaceMode: Boolean)
-    var
-        Item: Record Item;
-        Window: Dialog;
-        ImageID: Guid;
-    begin
-        Window.Open('#1############################################');
-
-        if FindSet(true) then
-            repeat
-                if "Import Status" = "Import Status"::Pending then
-                    if ("Item No." <> '') and ShouldImport(ReplaceMode, "Picture Already Exists") then begin
-                        Window.Update(1, "Item No.");
-                        Item.Get("Item No.");
-                        ImageID := Picture.MediaId;
-                        if "Picture Already Exists" then
-                            Clear(Item.Picture);
-                        Item.Picture.Insert(ImageID);
-                        Item.Modify();
-                        "Import Status" := "Import Status"::Completed;
-                        Modify();
-                    end;
-            until Next() = 0;
-
-        Window.Close();
-    end;
-
-    local procedure ShouldImport(ReplaceMode: Boolean; PictureExists: Boolean): Boolean
-    begin
-        if not ReplaceMode and PictureExists then
-            exit(false);
-
-        exit(true);
-    end;
-
-    [Scope('OnPrem')]
-    procedure GetAddCount(): Integer
-    var
-        TempItemPictureBuffer2: Record "Item Picture Buffer" temporary;
-    begin
-        TempItemPictureBuffer2.Copy(Rec, true);
-        TempItemPictureBuffer2.SetRange("Import Status", TempItemPictureBuffer2."Import Status"::Pending);
-        TempItemPictureBuffer2.SetRange("Picture Already Exists", false);
-        exit(TempItemPictureBuffer2.Count);
-    end;
-
-    [Scope('OnPrem')]
-    procedure GetAddedCount(): Integer
-    var
-        TempItemPictureBuffer2: Record "Item Picture Buffer" temporary;
-    begin
-        TempItemPictureBuffer2.Copy(Rec, true);
-        TempItemPictureBuffer2.SetRange("Import Status", TempItemPictureBuffer2."Import Status"::Completed);
-        TempItemPictureBuffer2.SetRange("Picture Already Exists", false);
-        exit(TempItemPictureBuffer2.Count);
-    end;
-
-    [Scope('OnPrem')]
-    procedure GetReplaceCount(): Integer
-    var
-        TempItemPictureBuffer2: Record "Item Picture Buffer" temporary;
-    begin
-        TempItemPictureBuffer2.Copy(Rec, true);
-        TempItemPictureBuffer2.SetRange("Import Status", TempItemPictureBuffer2."Import Status"::Pending);
-        TempItemPictureBuffer2.SetRange("Picture Already Exists", true);
-        exit(TempItemPictureBuffer2.Count);
-    end;
-
-    [Scope('OnPrem')]
-    procedure GetReplacedCount(): Integer
-    var
-        TempItemPictureBuffer2: Record "Item Picture Buffer" temporary;
-    begin
-        TempItemPictureBuffer2.Copy(Rec, true);
-        TempItemPictureBuffer2.SetRange("Import Status", TempItemPictureBuffer2."Import Status"::Completed);
-        TempItemPictureBuffer2.SetRange("Picture Already Exists", true);
-        exit(TempItemPictureBuffer2.Count);
-    end;
-}
-
-
-
-
-
-
-// ------------------------------------------------------------------------------------------------
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. See License.txt in the project root for license information.
-// ------------------------------------------------------------------------------------------------
-namespace Microsoft.Inventory.Item;
-
-using Microsoft.Inventory.Item.Picture;
-
-page 348 "Import Item Pictures"
-{
-    ApplicationArea = Basic, Suite;
-    Caption = 'Import Item Pictures';
-    DeleteAllowed = false;
-    InsertAllowed = false;
-    ModifyAllowed = false;
-    PageType = List;
-    SourceTable = "Item Picture Buffer";
-    SourceTableTemporary = true;
-    UsageCategory = Tasks;
-
     layout
     {
-        area(content)
+        addfirst(Content)
         {
-            group(Control6)
+            field(CustomItemPicture; ItemPictureGallery.Picture)
             {
+                ApplicationArea = All;
                 ShowCaption = false;
-                field(ZipFileName; ZipFileName)
-                {
-                    ApplicationArea = Basic, Suite;
-                    AssistEdit = true;
-                    Caption = 'Select a ZIP File';
-                    Editable = false;
-                    ToolTip = 'Specifies a ZIP file with pictures for upload.';
-                    Width = 60;
-
-                    trigger OnAssistEdit()
-                    begin
-                        if ZipFileName <> '' then begin
-                            Rec.DeleteAll();
-                            ZipFileName := '';
-                        end;
-                        ZipFileName := Rec.LoadZIPFile('', TotalCount, ReplaceMode);
-                        ReplaceModeEditable := ZipFileName <> '';
-                        Rec.FindFirst();
-
-                        UpdateCounters();
-                    end;
-                }
-                field(ReplaceMode; ReplaceMode)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Replace Pictures';
-                    Editable = ReplaceModeEditable;
-                    ToolTip = 'Specifies if existing item pictures are replaced during import.';
-
-                    trigger OnValidate()
-                    begin
-                        if ZipFileName = '' then
-                            Error(SelectZIPFilenameErr);
-
-                        Rec.Reset();
-                        Rec.SetRange("Picture Already Exists", true);
-                        if ReplaceMode then
-                            Rec.ModifyAll("Import Status", Rec."Import Status"::Pending)
-                        else
-                            Rec.ModifyAll("Import Status", Rec."Import Status"::Skip);
-                        Rec.SetRange("Picture Already Exists");
-
-                        UpdateCounters();
-                        CurrPage.Update();
-                    end;
-                }
-            }
-            group(Control23)
-            {
-                ShowCaption = false;
-                field(AddCount; AddCount)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Pictures to Add';
-                    Editable = false;
-                    ToolTip = 'Specifies the number of item pictures that can be added with the selected ZIP file.';
-                }
-                field(ReplaceCount; ReplaceCount)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Pictures to Replace';
-                    Editable = false;
-                    ToolTip = 'Specifies the number of existing item pictures that can be replaced with the selected ZIP file.';
-                }
-                field(TotalCount; TotalCount)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Total Pictures';
-                    Editable = false;
-                    ToolTip = 'Specifies the total number of item pictures that can be imported from the selected ZIP file.';
-                }
-                field(AddedCount; AddedCount)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Added Pictures';
-                    Editable = false;
-                    ToolTip = 'Specifies how many item pictures were added last time you used the Import Pictures action.';
-                }
-                field(ReplacedCount; ReplacedCount)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Replaced Pictures';
-                    Editable = false;
-                    ToolTip = 'Specifies how many item pictures were replaced last time you used the Import Pictures action.';
-                }
-            }
-            repeater(Group)
-            {
-                Caption = 'Pictures';
-                Editable = false;
-                field("Item No."; Rec."Item No.")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies the number of the item that the picture is for.';
-                }
-                field("Item Description"; Rec."Item Description")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies the description of the item that the picture is for.';
-                }
-                field("Picture Already Exists"; Rec."Picture Already Exists")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies if a picture already exists for the item card.';
-                }
-                field("File Name"; Rec."File Name")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies the name of the picture file. It must be the same as the item number.';
-                    Width = 20;
-                }
-                field("File Extension"; Rec."File Extension")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies the format of the picture file.';
-                    Width = 10;
-                }
-                field("File Size (KB)"; Rec."File Size (KB)")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies the size of the picture file.';
-                    Width = 10;
-                }
-                field("Modified Date"; Rec."Modified Date")
-                {
-                    ApplicationArea = Basic, Suite;
-                    Visible = false;
-                }
-                field("Modified Time"; Rec."Modified Time")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies when the picture was last modified.';
-                    Visible = false;
-                }
-                field("Import Status"; Rec."Import Status")
-                {
-                    ApplicationArea = Basic, Suite;
-                    ToolTip = 'Specifies if the last import of the picture was been skipped, is pending, or is completed.';
-                }
-            }
-        }
-    }
-
-    actions
-    {
-        area(processing)
-        {
-            group(Functions)
-            {
-                Caption = 'Functions';
-                action(ImportPictures)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Import Pictures';
-                    Image = ImportExport;
-                    ToolTip = 'Import pictures into items cards. Existing pictures will be replaced if the Replace Pictures check box is selected.';
-
-                    trigger OnAction()
-                    begin
-                        Rec.ImportPictures(ReplaceMode);
-                        AddedCount := Rec.GetAddedCount();
-                        ReplacedCount := Rec.GetReplacedCount();
-                    end;
-                }
-                action(ShowItemCard)
-                {
-                    ApplicationArea = Basic, Suite;
-                    Caption = 'Show Item Card';
-                    RunObject = Page "Item Card";
-                    RunPageLink = "No." = field("Item No.");
-                    ToolTip = 'Open the item card that contains the picture.';
-                }
-            }
-        }
-        area(Promoted)
-        {
-            group(Category_Process)
-            {
-                Caption = 'Process';
-
-                actionref(ImportPictures_Promoted; ImportPictures)
-                {
-                }
-                actionref(ShowItemCard_Promoted; ShowItemCard)
-                {
-                }
-            }
-        }
-    }
-
-    trigger OnQueryClosePage(CloseAction: Action): Boolean
-    begin
-        Rec.SetRange("Import Status", Rec."Import Status"::Pending);
-        if not Rec.IsEmpty() then
-            if not Confirm(ImportIncompleteQst, false) then begin
-                Rec.SetRange("Import Status");
-                exit(false);
-            end;
-
-        exit(true);
-    end;
-
-    var
-        ZipFileName: Text;
-        TotalCount: Integer;
-        AddCount: Integer;
-        SelectZIPFilenameErr: Label 'You must select the ZIP file first.';
-        ImportIncompleteQst: Label 'One or more pictures have not been imported yet. If you leave the page, you must upload the ZIP file again to import remaining pictures.\\Do you want to leave this page?';
-        AddedCount: Integer;
-        ReplaceCount: Integer;
-        ReplacedCount: Integer;
-        ReplaceMode: Boolean;
-        ReplaceModeEditable: Boolean;
-
-    local procedure UpdateCounters()
-    begin
-        AddCount := Rec.GetAddCount();
-        ReplaceCount := Rec.GetReplaceCount();
-        AddedCount := Rec.GetAddedCount();
-        ReplacedCount := Rec.GetReplacedCount();
-    end;
-}
-
-Buffer : 
-page 50103 "Custom Import Item Pictures"
-{
-    ApplicationArea = All;
-    Caption = 'Custom Import Item Pictures';
-    DeleteAllowed = false;
-    InsertAllowed = false;
-    ModifyAllowed = false;
-    PageType = List;
-    SourceTable = "Item Picture Import Buffer";
-    SourceTableTemporary = true;
-    UsageCategory = Tasks;
-
-    layout
-    {
-        area(content)
-        {
-            group(ImportGroup)
-            {
-                ShowCaption = true;
-                Caption = 'Import Options';
-
-                field(ZipFileName; ZipFileName)
-                {
-                    ApplicationArea = All;
-                    Caption = 'Select a ZIP File';
-                    Editable = false;
-                    ToolTip = 'Specifies a ZIP file with pictures for upload.';
-                    Width = 60;
-
-                    trigger OnAssistEdit()
-                    begin
-                        if ZipFileName <> '' then begin
-                            // Rec.DeleteAll();
-                            ZipFileName := '';
-                        end;
-                        ZipFileName := LoadZIPFile('', TotalCount);
-                        if ZipFileName <> '' then
-                            Rec.FindFirst();
-                    end;
-                }
-            }
-
-            repeater(PictureList)
-            {
-                Caption = 'Pictures';
-                Editable = false;
-
-                field("Item No."; Rec."Item No.")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Specifies the number of the item that the picture is for.';
-                }
-                field("File Name"; Rec."File Name")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Specifies the name of the picture file.';
-                    Width = 20;
-                }
-                field("File Extension"; Rec."File Extension")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Specifies the format of the picture file.';
-                    Width = 10;
-                }
-                field("File Size (KB)"; Rec."File Size (KB)")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Specifies the size of the picture file in KB.';
-                    Width = 10;
-                }
-                field("Picture Already Exists"; Rec."Picture Already Exists")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Indicates whether the picture already exists in the item.';
-                }
-            }
-        }
-    }
-
-    actions
-    {
-        area(processing)
-        {
-            group(Functions)
-            {
-                Caption = 'Functions';
-
-                action(ImportPicturesFromZIP)
-                {
-                    ApplicationArea = All;
-                    Caption = 'Import Pictures';
-                    Image = ImportExport;
-                    ToolTip = 'Import pictures into item cards.';
-
-                    trigger OnAction()
-                    begin
-                        ImportPicturesFromZIP_Local();
-                    end;
-                }
             }
         }
     }
 
     var
-        ZipFileName: Text;
-        TempBlob: Codeunit "Temp Blob";
-        DataCompression: Codeunit "Data Compression";
-        TotalCount: Integer;
+        ItemPictureGallery: Record "ItemPictureGallery";
 
-    local procedure LoadZIPFile(ZipFileName: Text; var TotalCount: Integer): Text
-    var
-        Item: Record Item;
-        FileMgt: Codeunit "File Management";
-        DataCompression: Codeunit "Data Compression";
-        TempBlob: Codeunit "Temp Blob";
-        Window: Dialog;
-        EntryList: List of [Text];
-        EntryListKey: Text;
-        InStream: InStream;
-        EntryOutStream: OutStream;
-        EntryInStream: InStream;
-        BufferRec: Record "Item Picture Import Buffer";
-        Length: Integer;
-        ItemNo: Text[20];
-        SuffixPos: Integer;
+    trigger OnAfterGetRecord()
     begin
-        if not UploadIntoStream('Select ZIP File', '', 'Zip Files|*.zip', ZipFileName, InStream) then
-            Error('No ZIP file selected.');
+        // Set the filters to find the correct image in the ItemPictureGallery table
+        ItemPictureGallery.SetRange("Item No.", Rec."No.");
+        ItemPictureGallery.SetRange(Sequencing, 1); // Assuming the first image is the primary one
 
-        DataCompression.OpenZipArchive(InStream, false);
-        DataCompression.GetEntryList(EntryList);
-
-        if EntryList.Count() = 0 then
-            Error('The ZIP file is empty or contains no valid entries.');
-
-        Window.Open('Processing: #1##############################');
-
-        TotalCount := 0;
-        // BufferRec.DeleteAll();
-
-        foreach EntryListKey in EntryList do begin
-            Window.Update(1, EntryListKey);
-
-            Clear(BufferRec);
-            BufferRec.Init();
-            BufferRec."File Name" := CopyStr(FileMgt.GetFileNameWithoutExtension(EntryListKey), 1, MaxStrLen(BufferRec."File Name"));
-            BufferRec."File Extension" := CopyStr(FileMgt.GetExtension(EntryListKey), 1, MaxStrLen(BufferRec."File Extension"));
-
-            SuffixPos := StrPos(BufferRec."File Name", '_');
-            if SuffixPos > 0 then
-                ItemNo := CopyStr(BufferRec."File Name", 1, SuffixPos - 1)
-            else
-                ItemNo := BufferRec."File Name";
-
-            if StrLen(ItemNo) <= MaxStrLen(Item."No.") then begin
-                if Item.Get(ItemNo) then begin
-                    TempBlob.CreateOutStream(EntryOutStream);
-                    Length := DataCompression.ExtractEntry(EntryListKey, EntryOutStream);
-                    TempBlob.CreateInStream(EntryInStream);
-                    BufferRec."File Size (KB)" := Round(Length / 1024, 1);
-                    BufferRec."Item No." := Item."No.";
-                    BufferRec."Picture Already Exists" := (Item.Picture.Count > 0);
-
-                    BufferRec.Picture.ImportStream(EntryInStream, EntryListKey);
-
-                    if BufferRec.Insert() then begin
-                        TotalCount += 1;
-                        Message('Inserted picture for Item No: %1', BufferRec."Item No.");
-                    end else
-                        Message('Failed to insert picture for Item No: %1', BufferRec."Item No.");
-                end else
-                    Message('No matching Item No. found for: %1', ItemNo);
-            end else
-                Message('File name exceeds allowed length: %1', BufferRec."File Name");
+        if not ItemPictureGallery.FindFirst() then begin
+            ItemPictureGallery.Init(); // Reset the record if no image is found
         end;
-
-        DataCompression.CloseZipArchive();
-        Window.Close();
-
-        if TotalCount = 0 then
-            Error('No valid images were found or imported.');
-
-        exit(ZipFileName);
     end;
 
-    local procedure ImportPicturesFromZIP_Local()
-    var
-        BufferRec: Record "Item Picture Import Buffer";
-        ItemPictureGallery: Record "ItemPictureGallery";
-        Window: Dialog;
-        InStream: InStream;
-        OutStream: OutStream;
-        TempBlob: Codeunit "Temp Blob";
-        ImportedCount: Integer;
-        FailedCount: Integer;
-    begin
-        Window.Open('Importing: #1##############################');
-        ImportedCount := 0;
-        FailedCount := 0;
-
-        if not BufferRec.FindSet() then
-            Error('No pictures found in the buffer. Please load a ZIP file first.');
-
-        repeat
-            Window.Update(1, BufferRec."Item No.");
-
-            Clear(ItemPictureGallery);
-            ItemPictureGallery.Init();
-            ItemPictureGallery."Item No." := BufferRec."Item No.";
-            ItemPictureGallery."Item Picture No." := GetNextPictureNo(BufferRec."Item No.");
-            ItemPictureGallery.Sequencing := ItemPictureGallery."Item Picture No.";
-
-            TempBlob.CreateOutStream(OutStream);
-            BufferRec.Picture.ExportStream(OutStream);
-            TempBlob.CreateInStream(InStream);
-            ItemPictureGallery.Picture.ImportStream(InStream, BufferRec."File Name");
-
-            if ItemPictureGallery.Insert(true) then begin
-                ImportedCount += 1;
-                Message('Imported picture for Item No: %1, Picture No: %2', ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No.");
-            end else begin
-                FailedCount += 1;
-                Message('Failed to import picture for Item No: %1. Error: %2', ItemPictureGallery."Item No.", GetLastErrorText());
-            end;
-        until BufferRec.Next() = 0;
-
-        Window.Close();
-        Message('Import completed. Successfully imported: %1, Failed: %2', ImportedCount, FailedCount);
-
-        // if ImportedCount > 0 then
-        //     if Confirm('Do you want to clear the buffer?', true) then
-        //         BufferRec.DeleteAll();
-    end;
-
-    local procedure GetNextPictureNo(ItemNo: Code[20]): Integer
-    var
-        ItemPictureGallery: Record "ItemPictureGallery";
-    begin
-        ItemPictureGallery.SetRange("Item No.", ItemNo);
-        if ItemPictureGallery.FindLast() then
-            exit(ItemPictureGallery."Item Picture No." + 1);
-        exit(1);
-    end;
 }
 
 
+    // local procedure ImportMultiplePicturesForAllItemsFromZIP()
+    // var
+    //     ZipInStream: InStream;
+    //     FileName: Text;
+    //     DataCompression: Codeunit "Data Compression";
+    //     UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
+    //     ItemPictureGallery: Record ItemPictureGallery;
+    //     Item: Record Item;
+    //     ImageStream: InStream;
+    //     ImageOutStream: OutStream;
+    //     EntryList: List of [Text];
+    //     EntryName: Text;
+    //     ItemNo: Code[20];
+    //     PictureNo: Integer;
+    //     TempBlob: Codeunit "Temp Blob";
+    //     Window: Dialog;
+    //     ImportedCount: Integer;
+    //     TotalCount: Integer;
+    //     SuffixPos: Integer;
+    // begin
+    //     if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
+    //         DataCompression.OpenZipArchive(ZipInStream, false);
+    //         DataCompression.GetEntryList(EntryList);
 
+    //         Window.Open('Traitement: #1##### sur #2#####\Fichier: #3##################');
+    //         TotalCount := EntryList.Count();
+    //         ImportedCount := 0;
+
+    //         foreach EntryName in EntryList do begin
+    //             ImportedCount += 1;
+    //             Window.Update(1, ImportedCount);
+    //             Window.Update(2, TotalCount);
+    //             Window.Update(3, EntryName);
+
+    //             if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+    //                 // Determine ItemNo and PictureNo
+    //                 SuffixPos := StrPos(EntryName, '_');
+    //                 if SuffixPos > 0 then begin
+    //                     ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
+    //                     Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
+    //                 end else begin
+    //                     ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
+    //                     PictureNo := GetNextPictureNo(ItemNo);  // Ensure unique PictureNo
+    //                 end;
+
+    //                 // Check if an image with the same Item No. and Picture No. already exists
+    //                 ItemPictureGallery.SetRange("Item No.", ItemNo);
+    //                 ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+    //                 if ItemPictureGallery.FindFirst() then begin
+    //                     Message('Image doublon détectée pour l''article No: %1, Image No: %2. L''importation est ignorée.', ItemNo, PictureNo);
+    //                 end else begin
+    //                     if Item.Get(ItemNo) then begin
+    //                         TempBlob.CreateOutStream(ImageOutStream);
+    //                         DataCompression.ExtractEntry(EntryName, ImageOutStream);
+    //                         TempBlob.CreateInStream(ImageStream);
+
+    //                         ItemPictureGallery.Init();
+    //                         ItemPictureGallery."Item No." := ItemNo;
+    //                         ItemPictureGallery."Item Picture No." := PictureNo;
+    //                         ItemPictureGallery.Sequencing := PictureNo;
+
+    //                         ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+    //                         if ItemPictureGallery.Insert() then
+    //                             Message('Image importée pour l''article No: %1, Image No: %2', ItemNo, PictureNo)
+    //                         else
+    //                             Message('Échec de l''importation pour l''article No: %1, Image No: %2', ItemNo, PictureNo);
+    //                     end else
+    //                         Message('Article No. %1 non trouvé. Import d''image ignoré.', ItemNo);
+    //                 end;
+    //             end;
+    //         end;
+
+    //         DataCompression.CloseZipArchive();
+    //         Window.Close();
+    //         Message('Importation des images terminée. %1 fichiers traités.', ImportedCount);
+    //     end else begin
+    //         Message('Aucun fichier sélectionné.');
+    //     end;
+    // end;
+
+    
+
+
+    // local procedure ImportMultiplePicturesForAllItemsFromZIP()
+    // var
+    //     ZipInStream: InStream;
+    //     FileName: Text;
+    //     DataCompression: Codeunit "Data Compression";
+    //     UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
+    //     ItemPictureGallery: Record "ItemPictureGallery";
+    //     Item: Record Item;
+    //     ImageStream: InStream;
+    //     ImageOutStream: OutStream;
+    //     EntryList: List of [Text];
+    //     EntryName: Text;
+    //     ItemNo: Code[20];
+    //     PictureNo: Integer;
+    //     TempBlob: Codeunit "Temp Blob";
+    //     Window: Dialog;
+    //     ImportedCount: Integer;
+    //     TotalCount: Integer;
+    //     SuffixPos: Integer;
+    // begin
+    //     if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
+    //         DataCompression.OpenZipArchive(ZipInStream, false);
+    //         DataCompression.GetEntryList(EntryList);
+
+    //         Window.Open('Traitement: #1##### sur #2#####\Fichier: #3##################');
+    //         TotalCount := EntryList.Count();
+    //         ImportedCount := 0;
+
+    //         foreach EntryName in EntryList do begin
+    //             ImportedCount += 1;
+    //             Window.Update(1, ImportedCount);
+    //             Window.Update(2, TotalCount);
+    //             Window.Update(3, EntryName);
+
+    //             if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+    //                 // Determine ItemNo and PictureNo
+    //                 SuffixPos := StrPos(EntryName, '_');
+    //                 if SuffixPos > 0 then begin
+    //                     ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
+    //                     Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
+    //                 end else begin
+    //                     ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
+    //                     PictureNo := GetNextPictureNo(ItemNo); // Ensure unique PictureNo
+    //                 end;
+
+    //                 // Check if an image with the same Item No. and Picture No. already exists
+    //                 ItemPictureGallery.SetRange("Item No.", ItemNo);
+    //                 ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+    //                 if not ItemPictureGallery.FindFirst() then begin
+    //                     TempBlob.CreateOutStream(ImageOutStream);
+    //                     DataCompression.ExtractEntry(EntryName, ImageOutStream);
+    //                     TempBlob.CreateInStream(ImageStream);
+
+    //                     ItemPictureGallery.Init();
+    //                     ItemPictureGallery."Item No." := ItemNo;
+    //                     ItemPictureGallery."Item Picture No." := PictureNo;
+    //                     ItemPictureGallery.Sequencing := PictureNo;
+
+    //                     ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+    //                     ItemPictureGallery.Insert();
+
+    //                     Message('Image importée pour l''article No: %1, Image No: %2', ItemNo, PictureNo);
+    //                 end else begin
+    //                     Message('Image doublon détectée pour l''article No: %1, Image No: %2. L''importation est ignorée.', ItemNo, PictureNo);
+    //                 end;
+    //             end;
+    //         end;
+
+    //         DataCompression.CloseZipArchive();
+    //         Window.Close();
+    //         Message('Importation des images terminée. %1 fichiers traités.', ImportedCount);
+    //     end else begin
+    //         Message('Aucun fichier sélectionné.');
+    //     end;
+    // end;

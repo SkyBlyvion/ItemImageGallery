@@ -62,7 +62,7 @@ page 50102 "NL Item Picture Gallery"
             }
         }
     }
-    // TODO: Faire des local procedures pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
+    // TODO: Faire des local procedures  ou codeunits pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
     actions
     {
         area(processing)
@@ -186,7 +186,7 @@ page 50102 "NL Item Picture Gallery"
                     DownloadFromStream(ZipInStream, 'Télécharger le fichier zip', '', '', ZipFileName);
                 end;
             }
-            //TODO: Enhance the Naming of the Zip(add Item Picture No), add error handling, also add support for differents formats
+            //TODO: add error handling, also add support for differents formats and add duplicate verification
             // Cet export exporte toutes les images de la table Gallerie Images.
             action(ExportMultiplePictures)
             {
@@ -341,7 +341,13 @@ page 50102 "NL Item Picture Gallery"
                         PictureNo := GetNextPictureNo(ItemNo);
                     end;
 
-                    if Item.Get(ItemNo) then begin
+                    // Check if an image with the same Item No. and Picture No. already exists
+                    ItemPictureGallery.SetRange("Item No.", ItemNo);
+                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+                    if ItemPictureGallery.FindFirst() then begin
+                        Message('Image doublon détectée pour l''article No: %1, Image No: %2. L''importation est ignorée.', ItemNo, PictureNo);
+                    end else begin
                         TempBlob.CreateOutStream(ImageOutStream);
                         DataCompression.ExtractEntry(EntryName, ImageOutStream);
                         TempBlob.CreateInStream(ImageStream);
@@ -370,8 +376,8 @@ page 50102 "NL Item Picture Gallery"
     begin
         ItemPictureGallery.SetRange("Item No.", ItemNo);
         if ItemPictureGallery.FindLast() then
-            exit(ItemPictureGallery."Item Picture No." + 1);
-        exit(1);
+            exit(ItemPictureGallery."Item Picture No." + 1);  // Start indexation at 1 
+        exit(1);  // Start at 1 if no images exist
     end;
 
     local procedure ImportMultiplePicturesForAllItemsFromZIP()
@@ -380,7 +386,7 @@ page 50102 "NL Item Picture Gallery"
         FileName: Text;
         DataCompression: Codeunit "Data Compression";
         UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
-        ItemPictureGallery: Record ItemPictureGallery;
+        ItemPictureGallery: Record "ItemPictureGallery";
         Item: Record Item;
         ImageStream: InStream;
         ImageOutStream: OutStream;
@@ -416,34 +422,36 @@ page 50102 "NL Item Picture Gallery"
                         Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
                     end else begin
                         ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
-                        PictureNo := 1;
+                        PictureNo := GetNextPictureNo(ItemNo);  // Ensure unique PictureNo
                     end;
 
-                    // Handle cases with or without PictureNo
+                    // Check if an image with the same Item No. and Picture No. already exists
+                    ItemPictureGallery.SetRange("Item No.", ItemNo);
+                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+                    while ItemPictureGallery.Get(ItemNo, PictureNo) do begin
+                        PictureNo += 1; // Increment PictureNo to avoid duplication
+                    end;
+
+                    // Import the image if the item exists
                     if Item.Get(ItemNo) then begin
                         TempBlob.CreateOutStream(ImageOutStream);
                         DataCompression.ExtractEntry(EntryName, ImageOutStream);
                         TempBlob.CreateInStream(ImageStream);
 
-                        ItemPictureGallery.Reset();
-                        ItemPictureGallery.SetRange("Item No.", ItemNo);
-                        ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
-
-                        if not ItemPictureGallery.FindFirst() then begin
-                            ItemPictureGallery.Init();
-                            ItemPictureGallery."Item No." := ItemNo;
-                            ItemPictureGallery."Item Picture No." := PictureNo;
-                            ItemPictureGallery.Sequencing := PictureNo;
-                            ItemPictureGallery.Insert();
-                        end;
+                        ItemPictureGallery.Init();
+                        ItemPictureGallery."Item No." := ItemNo;
+                        ItemPictureGallery."Item Picture No." := PictureNo;
+                        ItemPictureGallery.Sequencing := PictureNo;
 
                         ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
-                        if ItemPictureGallery.Modify() then
+                        if ItemPictureGallery.Insert() then
                             Message('Image importée pour l''article No: %1, Image No: %2', ItemNo, PictureNo)
                         else
                             Message('Échec de l''importation pour l''article No: %1, Image No: %2', ItemNo, PictureNo);
-                    end else
+                    end else begin
                         Message('Article No. %1 non trouvé. Import d''image ignoré.', ItemNo);
+                    end;
                 end;
             end;
 

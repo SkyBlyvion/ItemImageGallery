@@ -2,6 +2,10 @@ pageextension 50106 "NLItemCardExt" extends "Item Card"
 {
     layout
     {
+        modify(ItemPicture)
+        {
+            Visible = false;
+        }
         addbefore(ItemPicture) // Ajoute une section avant le groupe "ItemPicture" sur la fiche article.
         {
             part(NLItemPicture; "NL Item Picture Gallery") // Ajoute une sous-page (part) qui est la galerie d'images pour l'article. Qui est notre page Crée.
@@ -11,4 +15,5 @@ pageextension 50106 "NLItemCardExt" extends "Item Card"
             }
         }
     }
+
 }
