@@ -1,6 +1,7 @@
 /* Cette section du code est trop longue, il faudrait utiliser des CodeUnits, EventSubscriber, et ou move les parties qui manipule table data vers tablextension ou tabletriggers */
-/* Aprés rechrche, 300 a 400 lignes n'est pas mauvais, mais on peut tout a fait refactoriser les parties en suivant la (Single Resposability Principle) */
+/* Aprés rechrche, 500 lignes n'est pas mauvais, mais on peut tout à fait refactoriser les parties en suivant la (Single Resposability Principle) */
 /* implémenter asynchrone processing ou buffer table pour les largeImports */
+/* Import limité a 350Mo*/
 page 50102 "NL Item Picture Gallery"
 {
     InsertAllowed = false; // Empêche l'insertion de nouvelles images directement via cette page
@@ -8,7 +9,7 @@ page 50102 "NL Item Picture Gallery"
     DeleteAllowed = false; // Empêche la suppression d'images via cette page
     Caption = 'Gallerie d''images d''articles';
     SourceTable = ItemPictureGallery; // Source de données
-    PageType = CardPart; // factbox used to display detailed information related to a record within another page
+    PageType = CardPart; // Type de page
 
     layout
     {
@@ -18,7 +19,7 @@ page 50102 "NL Item Picture Gallery"
             {
                 ShowCaption = false;
 
-                // Navigation arrows placed above the image
+                // Fleches de navigation
                 group(NavigationGroup)
                 {
                     ShowCaption = false;
@@ -121,7 +122,7 @@ page 50102 "NL Item Picture Gallery"
                             TenantMedia.CalcFields(Content);
                             if TenantMedia.Content.HasValue then begin
                                 TenantMedia.Content.CreateInStream(PicInStream);
-                                // FileName := StrSubstNo('%1_%2.jpg', Rec."Item No.", Rec."Item Picture No.");
+                                FileName := StrSubstNo('%1_%2.jpg', Rec."Item No.", Rec."Item Picture No.");
                                 DownloadFromStream(PicInStream, 'Download Image', '', '', FileName);
                             end else
                                 Message('Le contenu de l''image n''est pas disponible.');
@@ -420,7 +421,7 @@ page 50102 "NL Item Picture Gallery"
             DataCompression.OpenZipArchive(ZipInStream, false);
             DataCompression.GetEntryList(EntryList);
 
-            foreach EntryName in EntryList do 
+            foreach EntryName in EntryList do
                 if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
                     ItemNo := GetItemNoFromFileName(EntryName);
 
@@ -450,11 +451,11 @@ page 50102 "NL Item Picture Gallery"
                         // Message('Image imported for Item No: %1, Picture No: %2', ItemNo, PictureNo);
                     end;
                 end;
-            end;
-
-            DataCompression.CloseZipArchive();
-            Message('Image import completed.');
         end;
+
+        DataCompression.CloseZipArchive();
+        Message('Image import completed.');
+    end;
 
 
     local procedure GetItemNoFromFileName(FileName: Text): Code[20]

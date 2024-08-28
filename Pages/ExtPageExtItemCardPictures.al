@@ -1,4 +1,4 @@
-pageextension 50106 "NLItemCardExt" extends "Item Card"
+pageextension 50103 "NLItemCardExt" extends "Item Card"
 {
     layout
     {
