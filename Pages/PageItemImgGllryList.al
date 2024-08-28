@@ -44,7 +44,6 @@ page 50102 "NL Item Picture Gallery"
                         end;
                     }
                 }
-
             }
             // Main image display
             field(Picture; Rec.Picture)
@@ -122,17 +121,14 @@ page 50102 "NL Item Picture Gallery"
                             TenantMedia.CalcFields(Content);
                             if TenantMedia.Content.HasValue then begin
                                 TenantMedia.Content.CreateInStream(PicInStream);
-                                FileName := StrSubstNo('%1_%2.jpg', Rec."Item No.", Rec."Item Picture No.");
+                                // FileName := StrSubstNo('%1_%2.jpg', Rec."Item No.", Rec."Item Picture No.");
                                 DownloadFromStream(PicInStream, 'Download Image', '', '', FileName);
-                            end else begin
+                            end else
                                 Message('Le contenu de l''image n''est pas disponible.');
-                            end;
-                        end else begin
+                        end else
                             Message('Impossible de récupérer l''image.');
-                        end;
-                    end else begin
+                    end else
                         Message('Aucune image à exporter.');
-                    end;
                 end;
             }
             action(ExportItemPictures)
@@ -160,7 +156,7 @@ page 50102 "NL Item Picture Gallery"
                     ItemPictureGallery.Reset();
                     ItemPictureGallery.SetRange("Item No.", Rec."Item No."); // Filter to only include images for the current item
 
-                    if ItemPictureGallery.FindSet() then begin
+                    if ItemPictureGallery.FindSet() then
                         repeat
                             if ItemPictureGallery.Picture.Count > 0 then begin
                                 ItemCnt := ItemCnt + 1;
@@ -176,7 +172,6 @@ page 50102 "NL Item Picture Gallery"
                                 end;
                             end;
                         until ItemPictureGallery.Next() = 0;
-                    end;
 
                     Message('Images traitées : %1', Format(PicCount));
                     blobStorage.CreateOutStream(ZipOutStream);
@@ -186,8 +181,6 @@ page 50102 "NL Item Picture Gallery"
                     DownloadFromStream(ZipInStream, 'Télécharger le fichier zip', '', '', ZipFileName);
                 end;
             }
-            //TODO: add error handling, also add support for differents formats and add duplicate verification
-            // Cet export exporte toutes les images de la table Gallerie Images.
             action(ExportMultiplePictures)
             {
                 ApplicationArea = All;
@@ -241,7 +234,7 @@ page 50102 "NL Item Picture Gallery"
 
                 trigger OnAction()
                 begin
-                    DeleteItemPicture; // Appelle la procédure de suppression de l'image
+                    DeleteItemPicture(); // Appelle la procédure de suppression de l'image
                 end;
             }
         }
@@ -261,220 +254,6 @@ page 50102 "NL Item Picture Gallery"
             ImageCount := '0 / 0';
     end;
 
-    // Variables globales pour les messages, compteur d'images et suppression
-    var
-        DeleteImageQst: Label 'Êtes-vous sur de vouloir supprimer cette image ?';
-        NothingDel: Label 'Rien à supprimer';
-        ImageCount: Text[100];
-
-    procedure DeleteItemPicture()
-    begin
-        if not Confirm(DeleteImageQst) then
-            exit;
-        if Rec.Get(Rec."Item No.", Rec."Item Picture No.") then begin
-            Clear(Rec.Picture);
-            Rec.Delete();
-            ResetOrdering();
-            if Rec.Get(Rec."Item No.", Rec."Item Picture No." + 1) then
-                exit
-            else
-                ImageCount := '0 / 0';
-        end else begin
-            Message(NothingDel);
-        end;
-    end;
-
-    local procedure ImportFromDevice();
-    var
-        Item: Record Item;
-        ItemPictureGallery: Record ItemPictureGallery;
-        PictureInStream: InStream;
-        FromFileName: Text;
-        UploadFileMsg: Label 'Please select the image to upload';
-    begin
-        if Item.get(Rec."Item No.") then begin
-            if UploadIntoStream('UploadFileMsg', '', 'All Files (*.*)|*.*', FromFileName, PictureInStream) then begin
-                ItemPictureGallery.Init();
-                ItemPictureGallery."Item No." := Item."No.";
-                ItemPictureGallery."Item Picture No." := FindLastItemPictureNo(ItemPictureGallery."Item No.") + 1;
-                ItemPictureGallery.Sequencing := ItemPictureGallery."Item Picture No.";
-                ItemPictureGallery.Picture.ImportStream(PictureInStream, FromFileName);
-                ItemPictureGallery.Insert();
-                if ItemPictureGallery.Count <> ItemPictureGallery.Sequencing then
-                    ResetOrdering();
-                if Rec.Get(ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No.") then
-                    exit;
-            end;
-        end;
-    end;
-
-    local procedure ImportMultiplePicturesFromZIP()
-    var
-        ZipInStream: InStream;
-        FileName: Text;
-        DataCompression: Codeunit "Data Compression";
-        UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
-        ItemPictureGallery: Record ItemPictureGallery;
-        Item: Record Item;
-        ImageStream: InStream;
-        ImageOutStream: OutStream;
-        EntryList: List of [Text];
-        EntryName: Text;
-        ItemNo: Code[20];
-        PictureNo: Integer;
-        TempBlob: Codeunit "Temp Blob";
-        SuffixPos: Integer;
-    begin
-        if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
-            DataCompression.OpenZipArchive(ZipInStream, false);
-            DataCompression.GetEntryList(EntryList);
-
-            foreach EntryName in EntryList do begin
-                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
-                    // Determine ItemNo and PictureNo
-                    SuffixPos := StrPos(EntryName, '_');
-                    if SuffixPos > 0 then begin
-                        ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
-                        Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
-                    end else begin
-                        ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
-                        PictureNo := GetNextPictureNo(ItemNo);
-                    end;
-
-                    // Check if an image with the same Item No. and Picture No. already exists
-                    ItemPictureGallery.SetRange("Item No.", ItemNo);
-                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
-
-                    if ItemPictureGallery.FindFirst() then begin
-                        Message('Image doublon détectée pour l''article No: %1, Image No: %2. L''importation est ignorée.', ItemNo, PictureNo);
-                    end else begin
-                        TempBlob.CreateOutStream(ImageOutStream);
-                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
-                        TempBlob.CreateInStream(ImageStream);
-
-                        ItemPictureGallery.Init();
-                        ItemPictureGallery."Item No." := ItemNo;
-                        ItemPictureGallery."Item Picture No." := PictureNo;
-                        ItemPictureGallery.Sequencing := PictureNo;
-
-                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
-                        ItemPictureGallery.Insert();
-                    end;
-                end;
-            end;
-
-            DataCompression.CloseZipArchive();
-            Message('Importation des images terminée.');
-        end else begin
-            Message('Aucun fichier sélectionné.');
-        end;
-    end;
-
-    local procedure GetNextPictureNo(ItemNo: Code[20]): Integer
-    var
-        ItemPictureGallery: Record "ItemPictureGallery";
-    begin
-        ItemPictureGallery.SetRange("Item No.", ItemNo);
-        if ItemPictureGallery.FindLast() then
-            exit(ItemPictureGallery."Item Picture No." + 1);  // Start indexation at 1 
-        exit(1);  // Start at 1 if no images exist
-    end;
-
-    local procedure ImportMultiplePicturesForAllItemsFromZIP()
-    var
-        ZipInStream: InStream;
-        FileName: Text;
-        DataCompression: Codeunit "Data Compression";
-        UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
-        ItemPictureGallery: Record "ItemPictureGallery";
-        Item: Record Item;
-        ImageStream: InStream;
-        ImageOutStream: OutStream;
-        EntryList: List of [Text];
-        EntryName: Text;
-        ItemNo: Code[20];
-        PictureNo: Integer;
-        TempBlob: Codeunit "Temp Blob";
-        Window: Dialog;
-        ImportedCount: Integer;
-        TotalCount: Integer;
-        SuffixPos: Integer;
-    begin
-        if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
-            DataCompression.OpenZipArchive(ZipInStream, false);
-            DataCompression.GetEntryList(EntryList);
-
-            Window.Open('Traitement: #1##### sur #2#####\Fichier: #3##################');
-            TotalCount := EntryList.Count();
-            ImportedCount := 0;
-
-            foreach EntryName in EntryList do begin
-                ImportedCount += 1;
-                Window.Update(1, ImportedCount);
-                Window.Update(2, TotalCount);
-                Window.Update(3, EntryName);
-
-                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
-                    // Determine ItemNo and PictureNo
-                    SuffixPos := StrPos(EntryName, '_');
-                    if SuffixPos > 0 then begin
-                        ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
-                        Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
-                    end else begin
-                        ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
-                        PictureNo := GetNextPictureNo(ItemNo);  // Ensure unique PictureNo
-                    end;
-
-                    // Check if an image with the same Item No. and Picture No. already exists
-                    ItemPictureGallery.SetRange("Item No.", ItemNo);
-                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
-
-                    while ItemPictureGallery.Get(ItemNo, PictureNo) do begin
-                        PictureNo += 1; // Increment PictureNo to avoid duplication
-                    end;
-
-                    // Import the image if the item exists
-                    if Item.Get(ItemNo) then begin
-                        TempBlob.CreateOutStream(ImageOutStream);
-                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
-                        TempBlob.CreateInStream(ImageStream);
-
-                        ItemPictureGallery.Init();
-                        ItemPictureGallery."Item No." := ItemNo;
-                        ItemPictureGallery."Item Picture No." := PictureNo;
-                        ItemPictureGallery.Sequencing := PictureNo;
-
-                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
-                        if ItemPictureGallery.Insert() then
-                            Message('Image importée pour l''article No: %1, Image No: %2', ItemNo, PictureNo)
-                        else
-                            Message('Échec de l''importation pour l''article No: %1, Image No: %2', ItemNo, PictureNo);
-                    end else begin
-                        Message('Article No. %1 non trouvé. Import d''image ignoré.', ItemNo);
-                    end;
-                end;
-            end;
-
-            DataCompression.CloseZipArchive();
-            Window.Close();
-            Message('Importation des images terminée. %1 fichiers traités.', ImportedCount);
-        end else begin
-            Message('Aucun fichier sélectionné.');
-        end;
-    end;
-
-    local procedure FindLastItemPictureNo(ItemNo: Code[20]): Integer
-    var
-        ItemPictureGallery: Record ItemPictureGallery;
-    begin
-        ItemPictureGallery.Reset();
-        ItemPictureGallery.SetCurrentKey("Item No.", "Item Picture No.");
-        ItemPictureGallery.Ascending(true);
-        ItemPictureGallery.SetRange("Item No.", ItemNo);
-        if ItemPictureGallery.FindLast() then
-            exit(ItemPictureGallery."Item Picture No.");
-    end;
-
     local procedure ResetOrdering()
     var
         ItemPictureGallery: Record ItemPictureGallery;
@@ -491,15 +270,234 @@ page 50102 "NL Item Picture Gallery"
             until ItemPictureGallery.Next() = 0;
     end;
 
+    // Variables globales pour les messages, compteur d'images et suppression
+    var
+        DeleteImageQst: Label 'Êtes-vous sur de vouloir supprimer cette image ?';
+        NothingDelLbl: Label 'Rien à supprimer';
+        ImageCount: Text[100];
+
+    procedure DeleteItemPicture()
+    begin
+        if not Confirm(DeleteImageQst) then
+            exit;
+        if Rec.Get(Rec."Item No.", Rec."Item Picture No.") then begin
+            Clear(Rec.Picture);
+            Rec.Delete();
+            ResetOrdering();
+            if Rec.Get(Rec."Item No.", Rec."Item Picture No." + 1) then
+                exit
+            else
+                ImageCount := '0 / 0';
+        end else
+            Message(NothingDelLbl);
+    end;
+
+    local procedure ImportFromDevice();
+    var
+        Item: Record Item;
+        ItemPictureGallery: Record ItemPictureGallery;
+        PictureInStream: InStream;
+        FromFileName: Text;
+        UploadFileMsg: Label 'Please select the image to upload';
+        LastItemPictureNo: Integer;
+        FinalFileName: Text;
+    begin
+        if Item.Get(Rec."Item No.") then
+            if UploadIntoStream(UploadFileMsg, '', 'All Files (*.*)|*.*', FromFileName, PictureInStream) then begin
+                LastItemPictureNo := FindLastItemPictureNo(ItemPictureGallery."Item No.");
+
+                ItemPictureGallery.Init();
+                ItemPictureGallery."Item No." := Item."No.";
+
+                // Determine the ItemPictureNo but do not use it directly for the first image's filename
+                if LastItemPictureNo = 0 then begin
+                    ItemPictureGallery."Item Picture No." := 1;  // First image
+                    FinalFileName := Item."No."; // No suffix for first image
+                end else begin
+                    ItemPictureGallery."Item Picture No." := LastItemPictureNo + 1;
+                    FinalFileName := StrSubstNo('%1_%2', Item."No.", ItemPictureGallery."Item Picture No.");
+                end;
+
+                ItemPictureGallery.Sequencing := ItemPictureGallery."Item Picture No.";
+                ItemPictureGallery.Picture.ImportStream(PictureInStream, FinalFileName);
+                ItemPictureGallery.Insert();
+
+                if ItemPictureGallery.Count <> ItemPictureGallery.Sequencing then
+                    ResetOrdering();
+
+                if Rec.Get(ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No.") then
+                    exit;
+            end;
+    end;
+
+    local procedure ImportMultiplePicturesFromZIP()
+    var
+        // Item: Record Item;
+        ItemPictureGallery: Record ItemPictureGallery;
+        TempBlob: Codeunit "Temp Blob";
+        DataCompression: Codeunit "Data Compression";
+        ZipInStream: InStream;
+        FileName: Text;
+        UploadFileMsg: Label 'Veuillez sélectionner un fichier ZIP à importer';
+        ImageStream: InStream;
+        ImageOutStream: OutStream;
+        EntryList: List of [Text];
+        EntryName: Text;
+        ItemNo: Code[20];
+        PictureNo: Integer;
+        SuffixPos: Integer;
+    begin
+        if UploadIntoStream(UploadFileMsg, '', 'Zip files (*.zip)|*.zip', FileName, ZipInStream) then begin
+            DataCompression.OpenZipArchive(ZipInStream, false);
+            DataCompression.GetEntryList(EntryList);
+
+            foreach EntryName in EntryList do
+                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+                    // Determine ItemNo and PictureNo
+                    SuffixPos := StrPos(EntryName, '_');
+                    if SuffixPos > 0 then begin
+                        ItemNo := CopyStr(EntryName, 1, SuffixPos - 1);
+                        Evaluate(PictureNo, CopyStr(EntryName, SuffixPos + 1, StrPos(EntryName, '.') - SuffixPos - 1));
+                    end else begin
+                        ItemNo := CopyStr(EntryName, 1, StrPos(EntryName, '.') - 1);
+                        PictureNo := GetNextPictureNo(ItemNo);
+                    end;
+
+                    // Check if an image with the same Item No. and Picture No. already exists
+                    ItemPictureGallery.SetRange("Item No.", ItemNo);
+                    ItemPictureGallery.SetRange("Item Picture No.", PictureNo);
+
+                    if ItemPictureGallery.FindFirst() then
+                        Message('Image doublon détectée pour l''article No: %1, Image No: %2. L''importation est ignorée.', ItemNo, PictureNo)
+                    else begin
+                        TempBlob.CreateOutStream(ImageOutStream);
+                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
+                        TempBlob.CreateInStream(ImageStream);
+
+                        ItemPictureGallery.Init();
+                        ItemPictureGallery."Item No." := ItemNo;
+                        ItemPictureGallery."Item Picture No." := PictureNo;
+                        ItemPictureGallery.Sequencing := PictureNo;
+
+                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+                        ItemPictureGallery.Insert();
+                    end;
+                end;
+
+
+            DataCompression.CloseZipArchive();
+            Message('Importation des images terminée.');
+        end else
+            Message('Aucun fichier sélectionné.');
+    end;
+
+    local procedure GetNextPictureNo(ItemNo: Code[20]): Integer
+    var
+        ItemPictureGallery: Record "ItemPictureGallery";
+    begin
+        ItemPictureGallery.SetRange("Item No.", ItemNo);
+        if ItemPictureGallery.FindLast() then
+            exit(ItemPictureGallery."Item Picture No." + 1);  // Start indexation at 1 
+        exit(1);  // Start at 1 if no images exist
+    end;
+
+    local procedure ImportMultiplePicturesForAllItemsFromZIP()
+    var
+        ItemPictureGallery: Record "ItemPictureGallery";
+        Item: Record Item;
+        DataCompression: Codeunit "Data Compression";
+        TempBlob: Codeunit "Temp Blob";
+        ZipInStream: InStream;
+        FileName: Text;
+        ImageStream: InStream;
+        ImageOutStream: OutStream;
+        EntryList: List of [Text];
+        EntryName: Text;
+        ItemNo: Code[20];
+        PictureNo: Integer;
+    begin
+        if UploadIntoStream('Select ZIP file to import', '', 'ZIP Files (*.zip)|*.zip', FileName, ZipInStream) then begin
+            DataCompression.OpenZipArchive(ZipInStream, false);
+            DataCompression.GetEntryList(EntryList);
+
+            foreach EntryName in EntryList do 
+                if (StrPos(LowerCase(EntryName), '.jpg') > 0) or (StrPos(LowerCase(EntryName), '.png') > 0) then begin
+                    ItemNo := GetItemNoFromFileName(EntryName);
+
+                    if Item.Get(ItemNo) then begin
+                        TempBlob.CreateOutStream(ImageOutStream);
+                        DataCompression.ExtractEntry(EntryName, ImageOutStream);
+                        TempBlob.CreateInStream(ImageStream);
+
+                        ItemPictureGallery.Reset();
+                        ItemPictureGallery.SetRange("Item No.", ItemNo);
+
+                        // Determine next available PictureNo for this ItemNo
+                        if not ItemPictureGallery.FindLast() then
+                            PictureNo := 1
+                        else
+                            PictureNo := ItemPictureGallery."Item Picture No." + 1;
+
+                        // Initialize and insert the new record
+                        ItemPictureGallery.Init();
+                        ItemPictureGallery."Item No." := ItemNo;
+                        ItemPictureGallery."Item Picture No." := PictureNo;
+                        ItemPictureGallery.Sequencing := PictureNo;
+
+                        ItemPictureGallery.Picture.ImportStream(ImageStream, EntryName);
+                        ItemPictureGallery.Insert(true);
+
+                        // Message('Image imported for Item No: %1, Picture No: %2', ItemNo, PictureNo);
+                    end;
+                end;
+            end;
+
+            DataCompression.CloseZipArchive();
+            Message('Image import completed.');
+        end;
+
+
+    local procedure GetItemNoFromFileName(FileName: Text): Code[20]
+    var
+        UnderscorePos: Integer;
+        DotPos: Integer;
+    begin
+        UnderscorePos := StrPos(FileName, '_');
+        DotPos := StrPos(FileName, '.');
+
+        if UnderscorePos > 0 then
+            exit(CopyStr(FileName, 1, UnderscorePos - 1))
+        else if DotPos > 0 then
+            exit(CopyStr(FileName, 1, DotPos - 1))
+        else
+            exit(FileName);
+    end;
+
+
+
+    local procedure FindLastItemPictureNo(ItemNo: Code[20]): Integer
+    var
+        ItemPictureGallery: Record ItemPictureGallery;
+    begin
+        ItemPictureGallery.Reset();
+        ItemPictureGallery.SetCurrentKey("Item No.", "Item Picture No.");
+        ItemPictureGallery.Ascending(true);
+        ItemPictureGallery.SetRange("Item No.", ItemNo);
+        if ItemPictureGallery.FindLast() then
+            exit(ItemPictureGallery."Item Picture No.")
+        else
+            exit(0); // Start at 0 if no images exist
+    end;
+
+
     // Local procedures for navigating images
     local procedure ShowNextImage()
     var
         RecordsSkipped: Integer;
     begin
         RecordsSkipped := Rec.Next(1); // Move to the next record
-        if RecordsSkipped > 0 then begin // Check if a record was found
+        if RecordsSkipped > 0 then // Check if a record was found
             CurrPage.Update(false); // Refresh page to show the next image
-        end;
     end;
 
     local procedure ShowPreviousImage()
@@ -507,8 +505,7 @@ page 50102 "NL Item Picture Gallery"
         RecordsSkipped: Integer;
     begin
         RecordsSkipped := Rec.Next(-1); // Move to the previous record
-        if RecordsSkipped > 0 then begin // Check if a record was found
-            CurrPage.Update(false); // Refresh page to show the previous image
-        end;
+        if RecordsSkipped > 0 then  // Check if a record was found
+            CurrPage.Update(false); // Refresh page to show the previous image      
     end;
 }
