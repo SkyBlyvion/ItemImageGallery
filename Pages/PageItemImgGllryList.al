@@ -19,19 +19,19 @@ page 50102 "NL Item Picture Gallery"
             {
                 ShowCaption = false;
 
-                // Fleches de navigation
+                // Fleches de navigation au dessus de l'image
                 group(NavigationGroup)
                 {
                     ShowCaption = false;
 
-                    field(PrevArrow; '<  ') // Previous arrow field
+                    field(PrevArrow; '<  ') // Champ fléche precédente
                     {
                         ApplicationArea = All;
                         ShowCaption = false;
                         Editable = false;
                         trigger OnDrillDown()
                         begin
-                            ShowPreviousImage(); // Call procedure to show the previous image
+                            ShowPreviousImage(); // Appelle la procédure pour afficher l'image precedente
                         end;
                     }
                     field(NextArrow; '>  ')
@@ -41,19 +41,19 @@ page 50102 "NL Item Picture Gallery"
                         Editable = false;
                         trigger OnDrillDown()
                         begin
-                            ShowNextImage(); // Call procedure to show the next image
+                            ShowNextImage(); // Appelle la procédure pour afficher l'image suivante
                         end;
                     }
                 }
             }
-            // Main image display
+            // Affichage de l'image
             field(Picture; Rec.Picture)
             {
                 ApplicationArea = All;
                 ShowCaption = false;
                 Editable = false;
             }
-            // Displays the image count below the image
+            // Affichage du compteur d'image sous l'image
             field(ImageCount; ImageCount)
             {
                 ApplicationArea = All;
@@ -62,12 +62,13 @@ page 50102 "NL Item Picture Gallery"
             }
         }
     }
-    // TODO: Faire des local procedures  ou codeunits pour les actions ( ameliorant la maintenance et rapidité d'éxécution)
+
     actions
     {
         area(processing)
         {
             // Pour cet import pas besoin de renommer l'image, elle sera automatiquement nommée ( Item No. + Item Picture No. )
+            // Permet d'importer une seule image
             action(ImportOnePicture)
             {
                 ApplicationArea = All;
@@ -80,6 +81,7 @@ page 50102 "NL Item Picture Gallery"
                     ImportFromDevice(); // Appelle la procédure d'importation 
                 end;
             }
+            // Permet d'importer plusieurs images pour un article
             action(ImportMultiplePictures)
             {
                 ApplicationArea = All;
@@ -89,9 +91,10 @@ page 50102 "NL Item Picture Gallery"
 
                 trigger OnAction()
                 begin
-                    ImportMultiplePicturesFromZIP();
+                    ImportMultiplePicturesFromZIP(); // Appelle la procédure d'importation
                 end;
             }
+            // Permet d'importer plusieurs images pour tous les articles
             action(ImportMultiplePicturesForAllItems)
             {
                 ApplicationArea = All;
@@ -101,26 +104,27 @@ page 50102 "NL Item Picture Gallery"
 
                 trigger OnAction()
                 begin
-                    ImportMultiplePicturesForAllItemsFromZIP();
+                    ImportMultiplePicturesForAllItemsFromZIP(); // Appelle la procédure d'importation
                 end;
             }
+            // Permet d'exporter une seule image
             action(ExportSinglePicture)
             {
                 ApplicationArea = All;
                 Caption = 'Exporter l''image actuelle';
-                Image = ExportAttachment;
+                Image = ExportAttachment; // image de l'action
                 ToolTip = 'Exporter l''image actuellement affichée.';
 
                 trigger OnAction()
                 var
-                    TenantMedia: Record "Tenant Media";
-                    PicInStream: InStream;
+                    TenantMedia: Record "Tenant Media"; // Enregistrement Tenant Media
+                    PicInStream: InStream; // Flux d'entrée de l'image
                     FileName: Text;
                 begin
-                    if Rec.Picture.Count > 0 then begin
+                    if Rec.Picture.Count > 0 then begin // Si il y a au moins une image 
                         if TenantMedia.Get(Rec.Picture.Item(1)) then begin
                             TenantMedia.CalcFields(Content);
-                            if TenantMedia.Content.HasValue then begin
+                            if TenantMedia.Content.HasValue then begin // Si le contenu de l'image est disponible, on l'exporte, sinon on affiche un message d'erreur
                                 TenantMedia.Content.CreateInStream(PicInStream);
                                 FileName := StrSubstNo('%1_%2.jpg', Rec."Item No.", Rec."Item Picture No.");
                                 DownloadFromStream(PicInStream, 'Download Image', '', '', FileName);
@@ -141,43 +145,50 @@ page 50102 "NL Item Picture Gallery"
 
                 trigger OnAction()
                 var
-                    ItemPictureGallery: Record ItemPictureGallery;
-                    TenantMedia: Record "Tenant Media";
-                    datacompresion: Codeunit 425;
-                    blobStorage: Codeunit "Temp Blob";
-                    PicInStream, ZipInStream : InStream;
-                    ZipOutStream: OutStream;
+                    ItemPictureGallery: Record ItemPictureGallery; // Enregistrement ItemPictureGallery
+                    TenantMedia: Record "Tenant Media"; // Enregistrement des ID's dans la Tenant Media
+                    datacompresion: Codeunit 425; // Codeunit de compression ZIP
+                    blobStorage: Codeunit "Temp Blob"; // Codeunit de stockage temporaire
+                    PicInStream, ZipInStream : InStream; // Flux d'entrée de l'image
+                    ZipOutStream: OutStream; // Flux de sortie du ZIP
                     ZipFileName: Text;
-                    ItemCnt, Index, PicCount : Integer;
+                    ItemCnt, Index, PicCount : Integer; // Compteur d'image
                 begin
-                    ZipFileName := StrSubstNo('%1_Pictures.zip', Rec."Item No.");
+                    ZipFileName := StrSubstNo('%1_Pictures.zip', Rec."Item No."); // Nom du fichier ZIP
                     datacompresion.CreateZipArchive();
 
-                    // Filter for the specific item
-                    ItemPictureGallery.Reset();
-                    ItemPictureGallery.SetRange("Item No.", Rec."Item No."); // Filter to only include images for the current item
+                    ItemPictureGallery.Reset(); // Reset des filtres
+                    ItemPictureGallery.SetRange("Item No.", Rec."Item No."); // Appliquer un filtre sur le numéro d'article
 
-                    if ItemPictureGallery.FindSet() then
+                    if ItemPictureGallery.FindSet() then // Si des enregistrements correspondant au filtre sont trouvés, alors traiter chaque image
                         repeat
-                            if ItemPictureGallery.Picture.Count > 0 then begin
-                                ItemCnt := ItemCnt + 1;
-                                for Index := 1 to ItemPictureGallery.Picture.Count do begin
-                                    PicCount := PicCount + 1;
-                                    if TenantMedia.Get(ItemPictureGallery.Picture.Item(Index)) then begin
-                                        TenantMedia.CalcFields(Content);
-                                        if TenantMedia.Content.HasValue then begin
+
+                            if ItemPictureGallery.Picture.Count > 0 then begin // Si l'enregistrement a des images associées, alors les ajouter à l'archive ZIP
+                                ItemCnt := ItemCnt + 1; // Incrémenter le compteur d'articles traités
+
+                                for Index := 1 to ItemPictureGallery.Picture.Count do begin // Parcourir toutes les images associées à cet enregistrement
+                                    PicCount := PicCount + 1; // Incrémenter le compteur d'images traitées
+
+                                    if TenantMedia.Get(ItemPictureGallery.Picture.Item(Index)) then begin // Si l'image est trouvée dans le record TenantMedia, alors la traiter
+                                        TenantMedia.CalcFields(Content); // // Calculer les champs blob pour l'image
+
+                                        if TenantMedia.Content.HasValue then begin // Si le contenu de l'image est disponible, alors l'ajouter à l'archive ZIP
                                             TenantMedia.Content.CreateInStream(PicInStream);
                                             datacompresion.AddEntry(PicInStream, StrSubstNo('%1_%2.jpg', ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No."));
                                         end;
                                     end;
                                 end;
                             end;
-                        until ItemPictureGallery.Next() = 0;
+                        until ItemPictureGallery.Next() = 0; // Répéter jusqu'à ce qu'il n'y ait plus d'images
 
                     Message('Images traitées : %1', Format(PicCount));
+
+                    // Créer un flux de sortie pour le fichier ZIP et sauvegarder l'archive
                     blobStorage.CreateOutStream(ZipOutStream);
                     datacompresion.SaveZipArchive(ZipOutStream);
                     datacompresion.CloseZipArchive();
+
+                    // Créer un flux d'entrée à partir du fichier ZIP et proposer le téléchargement
                     blobStorage.CreateInStream(ZipInStream);
                     DownloadFromStream(ZipInStream, 'Télécharger le fichier zip', '', '', ZipFileName);
                 end;
@@ -199,18 +210,21 @@ page 50102 "NL Item Picture Gallery"
                     ZipFileName: Text;
                     ItemCnt, Index, PicCount : Integer;
                 begin
-                    ZipFileName := 'Pictures.zip';
+                    ZipFileName := 'Pictures.zip'; // Nom du fichier ZIP utilise un nom par defaut car plusieurs articles 
                     datacompresion.CreateZipArchive();
                     ItemPictureGallery.Reset();
                     ItemPictureGallery.FindSet();
                     repeat
-                        if ItemPictureGallery.Picture.Count > 0 then begin
+                        if ItemPictureGallery.Picture.Count > 0 then begin // Si l'enregistrement a des images associées
                             ItemCnt := ItemCnt + 1;
-                            for Index := 1 to ItemPictureGallery.Picture.Count do begin
+
+                            for Index := 1 to ItemPictureGallery.Picture.Count do begin // Parcourir toutes les images associées à cet enregistrement
                                 PicCount := PicCount + 1;
-                                if TenantMedia.Get(ItemPictureGallery.Picture.Item(Index)) then begin
+
+                                if TenantMedia.Get(ItemPictureGallery.Picture.Item(Index)) then begin // Si l'image est trouvée dans le record TenantMedia, alors la traiter
                                     TenantMedia.CalcFields(Content);
-                                    if TenantMedia.Content.HasValue then begin
+
+                                    if TenantMedia.Content.HasValue then begin // Si le contenu de l'image est disponible, alors l'ajouter à l'archive ZIP
                                         TenantMedia.Content.CreateInStream(PicInStream);
                                         datacompresion.AddEntry(PicInStream, StrSubstNo('%1_%2.jpg', ItemPictureGallery."Item No.", ItemPictureGallery."Item Picture No."));
                                     end;
@@ -218,10 +232,15 @@ page 50102 "NL Item Picture Gallery"
                             end;
                         end;
                     until ItemPictureGallery.Next() = 0;
+
                     Message('Items processed ' + Format(ItemCnt) + ' Pictures processed ' + Format(PicCount));
+
+                    // Créer un flux de sortie pour le fichier ZIP et sauvegarder l'archive
                     blobStorage.CreateOutStream(ZipOutStream);
                     datacompresion.SaveZipArchive(ZipOutStream);
                     datacompresion.CloseZipArchive();
+
+                    // Créer un flux d'entrée à partir du fichier ZIP et proposer le déchargement
                     blobStorage.CreateInStream(ZipInStream);
                     DownloadFromStream(ZipInStream, 'Download zip file', '', '', ZipFileName);
                 end;
